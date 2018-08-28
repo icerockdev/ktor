@@ -1,5 +1,5 @@
 
-//apply plugin: 'org.jetbrains.kotlin.frontend'
+apply plugin: 'org.jetbrains.kotlin.frontend'
 
 dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib-js"
@@ -19,17 +19,16 @@ sourceSets {
     }
 }
 
-//compileKotlin2Js {
-//    kotlinOptions.metaInfo = true
-//    kotlinOptions.outputFile = "$project.buildDir.path/js/${project.name}.js"
-//    kotlinOptions.sourceMap = true
-//    kotlinOptions.moduleKind = 'commonjs'
-//    kotlinOptions.main = "call"
-//}
-//
-//kotlinFrontend {
-//    webpackBundle {
-//        bundleName = "main"
-//    }
-//}
+compileKotlin2Js {
+    kotlinOptions.metaInfo = true
+    kotlinOptions.outputFile = "$project.buildDir.path/js/${project.name}.js"
+    kotlinOptions.sourceMap = true
+    kotlinOptions.moduleKind = 'commonjs'
+    kotlinOptions.main = "call"
+}
 
+kotlinFrontend {
+    webpackBundle {
+        bundleName = "main"
+    }
+}
