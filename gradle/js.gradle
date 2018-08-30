@@ -1,8 +1,8 @@
-
 apply plugin: 'org.jetbrains.kotlin.frontend'
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-stdlib-js"
+    compile "org.jetbrains.kotlin:kotlin-stdlib-js:$kotlin_version"
+    compile "org.jetbrains.kotlin:kotlin-test-js:$kotlin_version"
 
     compile group: 'org.jetbrains.kotlinx', name: 'kotlinx-io-js', version: kotlinx_io_version
     compile group: 'org.jetbrains.kotlinx', name: 'kotlinx-coroutines-io-js', version: kotlinx_io_version
@@ -19,16 +19,41 @@ sourceSets {
     }
 }
 
+kotlinFrontend {
+    downloadNodeJsVersion = "10.8.0"
+    sourceMaps = true
+
+    npm {
+        devDependency "karma-qunit", "1.2.1"
+        devDependency "karma", "2.0.5"
+    }
+
+    webpackBundle {
+        bundleName = "test"
+        sourceMapEnabled = true
+    }
+
+    karma {
+        enableWebPack true
+    }
+}
+
 compileKotlin2Js {
     kotlinOptions.metaInfo = true
-    kotlinOptions.outputFile = "$project.buildDir.path/js/${project.name}.js"
+    kotlinOptions.sourceMap = true
+    kotlinOptions.moduleKind = 'commonjs'
+    kotlinOptions.main = "noCall"
+//    kotlinOptions.sourceMapEmbedSources = 'always'
+}
+
+compileTestKotlin2Js {
+    kotlinOptions.metaInfo = true
     kotlinOptions.sourceMap = true
     kotlinOptions.moduleKind = 'commonjs'
     kotlinOptions.main = "call"
+//    kotlinOptions.sourceMapEmbedSources = 'always'
 }
 
-kotlinFrontend {
-    webpackBundle {
-        bundleName = "main"
-    }
+project.afterEvaluate {
+    project.tasks.findByName("webpack-bundle").dependsOn(project.tasks.compileKotlin2Js)
 }

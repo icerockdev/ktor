@@ -1,6 +1,5 @@
 package io.ktor.client.engine.js
 
-import org.khronos.webgl.*
 import kotlin.js.*
 
 internal external interface ReadableStream {

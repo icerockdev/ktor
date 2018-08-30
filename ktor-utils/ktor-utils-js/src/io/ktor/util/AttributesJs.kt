@@ -1,5 +1,6 @@
 package io.ktor.util
 
+@JsName("AttributesJsFn")
 actual fun Attributes(): Attributes = AttributesJs()
 
 class AttributesJs : Attributes {
