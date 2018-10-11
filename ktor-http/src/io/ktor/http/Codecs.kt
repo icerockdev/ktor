@@ -98,7 +98,7 @@ fun String.encodeURLParameter(
     }
 }
 
-fun CharSequence.decodeURLQueryComponent(
+fun String.decodeURLQueryComponent(
     start: Int = 0, end: Int = length,
     plusIsSpace: Boolean = false,
     charset: Charset = Charsets.UTF_8
@@ -109,7 +109,7 @@ fun String.decodeURLPart(
     charset: Charset = Charsets.UTF_8
 ): String = decodeScan(start, end, false, charset)
 
-private fun CharSequence.decodeScan(start: Int, end: Int, plusIsSpace: Boolean, charset: Charset): String {
+private fun String.decodeScan(start: Int, end: Int, plusIsSpace: Boolean, charset: Charset): String {
     for (index in start until end) {
         val ch = this[index]
         if (ch == '%' || (plusIsSpace && ch == '+')) {

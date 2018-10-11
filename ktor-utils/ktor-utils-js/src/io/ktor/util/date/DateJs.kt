@@ -29,6 +29,6 @@ actual fun GMTDate(timestamp: Long?): GMTDate {
 }
 
 actual fun GMTDate(seconds: Int, minutes: Int, hours: Int, dayOfMonth: Int, month: Month, year: Int): GMTDate {
-    val timestamp = Date.UTC(year, month.ordinal, dayOfMonth - 1, hours, minutes, seconds).toLong()
+    val timestamp = Date.UTC(year, month.ordinal, dayOfMonth, hours, minutes, seconds).toLong()
     return GMTDate(timestamp)
 }
