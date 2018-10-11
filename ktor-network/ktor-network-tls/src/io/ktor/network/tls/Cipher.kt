@@ -1,7 +1,6 @@
 package io.ktor.network.tls
 
 import io.ktor.http.cio.internals.*
-import io.ktor.network.util.*
 import kotlinx.io.core.*
 import kotlinx.io.pool.*
 import java.nio.*
@@ -78,99 +77,71 @@ internal fun decryptCipher(
     return cipher
 }
 
-internal fun ByteReadPacket.encrypted(cipher: Cipher, recordIv: Long): ByteReadPacket {
-    val buffer = DefaultByteBufferPool.borrow()
-    var encryptedPool = DefaultByteBufferPool
-    var encrypted = encryptedPool.borrow()
+internal fun ByteReadPacket.cipherLoop(cipher: Cipher, recordIv: Long, writeRecordIv: Boolean): ByteReadPacket {
+    val srcBuffer = DefaultByteBufferPool.borrow()
+    var dstBuffer = CryptoBufferPool.borrow()
+    var dstBufferPool: ObjectPool<ByteBuffer>? = CryptoBufferPool
 
     try {
         return buildPacket {
-            buffer.clear()
-
-            writeLong(recordIv)
-
-            while (true) {
-                val rc = if (buffer.hasRemaining()) readAvailable(buffer) else 0
-                if (rc == -1) break
-                buffer.flip()
-
-                if (!buffer.hasRemaining() && isEmpty) break
-
-                encrypted.clear()
-
-                if (cipher.getOutputSize(buffer.remaining()) > encrypted.remaining()) {
-                    encryptedPool.recycle(encrypted)
-                    encryptedPool = DefaultDatagramByteBufferPool
-                    encrypted = encryptedPool.borrow()
-                }
-
-                cipher.update(buffer, encrypted)
-                encrypted.flip()
-                writeFully(encrypted)
-                buffer.compact()
+            srcBuffer.clear()
+            if (writeRecordIv) {
+                writeLong(recordIv)
             }
 
-            writeFully(cipher.doFinal()) // TODO use encrypted buffer instead
+            while (true) {
+                val rc = if (srcBuffer.hasRemaining()) readAvailable(srcBuffer) else 0
+                srcBuffer.flip()
+
+                if (!srcBuffer.hasRemaining() && (rc == -1 || this@cipherLoop.isEmpty)) break
+
+                dstBuffer.clear()
+
+                if (cipher.getOutputSize(srcBuffer.remaining()) > dstBuffer.remaining()) {
+                    dstBufferPool?.recycle(dstBuffer)
+                    dstBufferPool = null
+                    dstBuffer = ByteBuffer.allocate(cipher.getOutputSize(srcBuffer.remaining()))
+                }
+
+                cipher.update(srcBuffer, dstBuffer)
+                dstBuffer.flip()
+                writeFully(dstBuffer)
+                srcBuffer.compact()
+            }
+
+            assert(!srcBuffer.hasRemaining())
+            assert(!dstBuffer.hasRemaining())
+
+            val requiredBufferSize = cipher.getOutputSize(0)
+            if (requiredBufferSize == 0) return@buildPacket
+            if (requiredBufferSize > dstBuffer.capacity()) {
+                writeFully(cipher.doFinal())
+                return@buildPacket
+            }
+
+            dstBuffer.clear()
+            cipher.doFinal(EmptyByteBuffer, dstBuffer)
+            dstBuffer.flip()
+
+            if (!dstBuffer.hasRemaining()) { // workaround JDK bug
+                writeFully(cipher.doFinal())
+                return@buildPacket
+            }
+
+            writeFully(dstBuffer)
         }
     } finally {
-        DefaultByteBufferPool.recycle(buffer)
-        encryptedPool.recycle(encrypted)
+        DefaultByteBufferPool.recycle(srcBuffer)
+        dstBufferPool?.recycle(dstBuffer)
     }
 }
 
+internal fun ByteReadPacket.encrypted(cipher: Cipher, recordIv: Long): ByteReadPacket {
+    return cipherLoop(cipher, recordIv, true)
+}
+
 internal fun ByteReadPacket.decrypted(cipher: Cipher): ByteReadPacket {
-    val buffer = DefaultByteBufferPool.borrow()
-    var decrypted = CryptoBufferPool.borrow()
-    var decryptedBufferPool: ObjectPool<ByteBuffer>? = CryptoBufferPool
-
-    try {
-        return buildPacket {
-            buffer.clear()
-
-            while (true) {
-                val rc = if (buffer.hasRemaining()) readAvailable(buffer) else 0
-                buffer.flip()
-
-                if (!buffer.hasRemaining() && (rc == -1 || this@decrypted.isEmpty)) break
-
-                decrypted.clear()
-
-                if (cipher.getOutputSize(buffer.remaining()) > decrypted.remaining()) {
-                    decrypted = ByteBuffer.allocate(cipher.getOutputSize(buffer.remaining()))
-                    decryptedBufferPool = null
-                }
-
-                cipher.update(buffer, decrypted)
-                decrypted.flip()
-                writeFully(decrypted)
-                buffer.compact()
-            }
-
-            assert(!buffer.hasRemaining())
-            assert(!decrypted.hasRemaining())
-
-            do {
-                val requiredBufferSize = cipher.getOutputSize(0)
-                if (requiredBufferSize == 0) break
-                if (requiredBufferSize > decrypted.capacity()) {
-                    writeFully(cipher.doFinal())
-                    break
-                }
-
-                decrypted.clear()
-                cipher.doFinal(EmptyByteBuffer, decrypted)
-                decrypted.flip()
-                if (!decrypted.hasRemaining()) { // workaround JDK bug
-                    writeFully(cipher.doFinal())
-                    break
-                }
-                writeFully(decrypted)
-            } while (true)
-        }
-    } finally {
-        DefaultByteBufferPool.recycle(buffer)
-        decryptedBufferPool?.recycle(decrypted)
-    }
+    return cipherLoop(cipher, 0, false)
 }
 
 internal fun ByteArray.set(offset: Int, data: Long) {
