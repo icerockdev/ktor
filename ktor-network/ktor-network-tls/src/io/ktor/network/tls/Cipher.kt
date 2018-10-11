@@ -3,9 +3,15 @@ package io.ktor.network.tls
 import io.ktor.http.cio.internals.*
 import io.ktor.network.util.*
 import kotlinx.io.core.*
+import kotlinx.io.pool.*
+import java.nio.*
 import javax.crypto.*
 import javax.crypto.spec.*
 
+private val CryptoBufferPool: ObjectPool<ByteBuffer> = object : DefaultPool<ByteBuffer>(128) {
+    override fun produceInstance(): ByteBuffer = ByteBuffer.allocate(65536)
+    override fun clearInstance(instance: ByteBuffer): ByteBuffer = instance.apply { clear() }
+}
 
 internal fun encryptCipher(
     suite: CipherSuite,
@@ -114,8 +120,8 @@ internal fun ByteReadPacket.encrypted(cipher: Cipher, recordIv: Long): ByteReadP
 
 internal fun ByteReadPacket.decrypted(cipher: Cipher): ByteReadPacket {
     val buffer = DefaultByteBufferPool.borrow()
-    var decrypted = DefaultByteBufferPool.borrow()
-    var decryptedPool = DefaultByteBufferPool
+    var decrypted = CryptoBufferPool.borrow()
+    var decryptedBufferPool: ObjectPool<ByteBuffer>? = CryptoBufferPool
 
     try {
         return buildPacket {
@@ -123,20 +129,15 @@ internal fun ByteReadPacket.decrypted(cipher: Cipher): ByteReadPacket {
 
             while (true) {
                 val rc = if (buffer.hasRemaining()) readAvailable(buffer) else 0
-                if (rc == -1) break
                 buffer.flip()
 
-                if (!buffer.hasRemaining() && isEmpty) break
+                if (!buffer.hasRemaining() && (rc == -1 || this@decrypted.isEmpty)) break
 
                 decrypted.clear()
 
                 if (cipher.getOutputSize(buffer.remaining()) > decrypted.remaining()) {
-                    if (buffer.capacity() < 65536) {
-                        decryptedPool.recycle(decrypted)
-                        decryptedPool = DefaultDatagramByteBufferPool
-                        decrypted = decryptedPool.borrow()
-                        decrypted.clear()
-                    }
+                    decrypted = ByteBuffer.allocate(cipher.getOutputSize(buffer.remaining()))
+                    decryptedBufferPool = null
                 }
 
                 cipher.update(buffer, decrypted)
@@ -145,11 +146,30 @@ internal fun ByteReadPacket.decrypted(cipher: Cipher): ByteReadPacket {
                 buffer.compact()
             }
 
-            writeFully(cipher.doFinal()) // TODO use decrypted buffer instead
+            assert(!buffer.hasRemaining())
+            assert(!decrypted.hasRemaining())
+
+            do {
+                val requiredBufferSize = cipher.getOutputSize(0)
+                if (requiredBufferSize == 0) break
+                if (requiredBufferSize > decrypted.capacity()) {
+                    writeFully(cipher.doFinal())
+                    break
+                }
+
+                decrypted.clear()
+                cipher.doFinal(EmptyByteBuffer, decrypted)
+                decrypted.flip()
+                if (!decrypted.hasRemaining()) { // workaround JDK bug
+                    writeFully(cipher.doFinal())
+                    break
+                }
+                writeFully(decrypted)
+            } while (true)
         }
     } finally {
         DefaultByteBufferPool.recycle(buffer)
-        decryptedPool.recycle(decrypted)
+        decryptedBufferPool?.recycle(decrypted)
     }
 }
 
@@ -170,3 +190,5 @@ internal fun ByteArray.set(offset: Int, data: Short) {
         this[idx + offset] = (data.toInt() ushr (1 - idx) * 8).toByte()
     }
 }
+
+private val EmptyByteBuffer: ByteBuffer = ByteBuffer.allocate(0)
