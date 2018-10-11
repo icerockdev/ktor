@@ -23,7 +23,7 @@ class JsClientEngine(override val config: HttpClientEngineConfig) : HttpClientEn
     override suspend fun execute(
         call: HttpClientCall, data: HttpRequestData
     ): HttpEngineCall = withContext(dispatcher) {
-        val callContext = CompletableDeferred<Unit>(coroutineContext[Job]) + dispatcher
+        val callContext = CompletableDeferred<Unit>(this@JsClientEngine.coroutineContext[Job]) + dispatcher
 
         val requestTime = GMTDate()
         val request = DefaultHttpRequest(call, data)
@@ -31,65 +31,12 @@ class JsClientEngine(override val config: HttpClientEngineConfig) : HttpClientEn
 
         val stream = rawResponse.body as? ReadableStream ?: error("Fail to obtain native stream: $call, $rawResponse")
 
-        val contentStream = Channel<Uint8Array>(Channel.UNLIMITED)
-        stream.getReader().read().then { done: Boolean, chunk: Uint8Array ->
-            if (done) {
-                contentStream.close()
-                return@then Unit
-            }
-
-            contentStream.offer(chunk)
-        }
-
-        val contentWriter = GlobalScope.writer(callContext) {
-            contentStream.consumeEach { array ->
-                channel.writeFully(ByteArray(array.length) { array[it] })
-            }
-        }
-
-        val response = JsHttpResponse(call, requestTime, rawResponse, contentWriter.channel, callContext)
+        val response = JsHttpResponse(call, requestTime, rawResponse, stream.toByteChannel(callContext), callContext)
         HttpEngineCall(request, response)
     }
 
     override fun close() {
     }
 
-    private suspend fun HttpRequest.toRaw(): RequestInit {
-        val jsHeaders = js("({})")
-        headers.forEach { key, values ->
-            jsHeaders[key] = values
-        }
-
-        val rawRequest = js("({})")
-        rawRequest["method"] = method.value
-        rawRequest["headers"] = jsHeaders
-
-        val content = content
-        val body = when (content) {
-            is OutgoingContent.ByteArrayContent -> content.bytes().toTypedArray()
-            is OutgoingContent.ReadChannelContent -> content.readFrom().readRemaining().readBytes().toTypedArray()
-            is OutgoingContent.WriteChannelContent -> writer(dispatcher) {
-                content.writeTo(channel)
-            }.channel.readRemaining().readBytes().toTypedArray()
-            else -> null
-        }
-
-        body?.let { rawRequest["body"] = Uint8Array(it) }
-
-        return rawRequest.unsafeCast<RequestInit>()
-    }
 }
 
-private suspend fun fetch(url: Url, request: RequestInit): Response = suspendCancellableCoroutine {
-    window.fetch(url.toString(), request).then({ response ->
-        it.resume(response)
-    }, { cause ->
-        it.cancel(cause)
-    })
-}
-
-/*
-private suspend fun Response.receiveBody(): String = suspendCancellableCoroutine { continuation ->
-    text().then { continuation.resume(it) }
-}
-*/

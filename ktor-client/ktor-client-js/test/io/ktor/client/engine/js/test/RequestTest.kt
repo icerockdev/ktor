@@ -11,16 +11,9 @@ import kotlin.test.*
 class RequestTest {
 
     @Test
-    fun simpleRequestTest(): Promise<Unit> = GlobalScope.async(Dispatchers.Default, CoroutineStart.DEFAULT) {
+    fun simpleRequestTest(): Promise<Unit> = GlobalScope.promise {
         val client = HttpClient()
-        val response: HttpResponse = client.get("https://www.google.com")
-
-        assertTrue(response.status.isSuccess())
-        val text = response.readText()
-        println(text)
-
-    }.asPromise().then {
-        println("done")
-    }
+        val text = client.get<String>("https://www.ya.ru")
+    }.catch {  }
 
 }
