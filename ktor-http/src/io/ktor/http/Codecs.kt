@@ -3,12 +3,17 @@ package io.ktor.http
 import kotlinx.io.charsets.*
 import kotlinx.io.core.*
 
+import io.ktor.SharedImmutable
+
+@SharedImmutable
 private val URL_ALPHABET = (('a'..'z') + ('A'..'Z') + ('0'..'9')).map { it.toByte() }
+@SharedImmutable
 private val HEX_ALPHABET = ('a'..'f') + ('A'..'F') + ('0'..'9')
 
 /**
  * https://tools.ietf.org/html/rfc3986#section-2
  */
+@SharedImmutable
 private val URL_PROTOCOL_PART = listOf(
     ':', '/', '?', '#', '[', ']', '@',  // general
     '!', '$', '&', '\'', '(', ')', '*', ',', ';', '=',  // sub-components
@@ -18,6 +23,7 @@ private val URL_PROTOCOL_PART = listOf(
 /**
  * from [pchar] in https://tools.ietf.org/html/rfc3986#section-2
  */
+@SharedImmutable
 private val VALID_PATH_PART = listOf(
     ':', '@',
     '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=',
@@ -27,6 +33,7 @@ private val VALID_PATH_PART = listOf(
  * Oauth specific percent encoding
  * https://tools.ietf.org/html/rfc5849#section-3.6
  */
+@SharedImmutable
 private val OAUTH_SYMBOLS = listOf('-', '.', '_', '~').map { it.toByte() }
 
 /**
