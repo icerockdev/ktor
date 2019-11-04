@@ -173,6 +173,20 @@ allprojects {
             }
         }
     }
+
+    publishing {
+        repositories {
+            maven {
+                name = "bintray"
+                url = "https://api.bintray.com/maven/icerockdev/kotlin-libs/ktor/;publish=1"
+
+                credentials {
+                    username = System.getProperty("BINTRAY_USER")
+                    password = System.getProperty("BINTRAY_KEY")
+                }
+            }
+        }
+    }
 }
 
 // task rootAllTest(type: org.jetbrains.kotlin.gradle.testing.internal.KotlinTestReport) {
